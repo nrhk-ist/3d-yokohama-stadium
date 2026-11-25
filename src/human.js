@@ -139,6 +139,7 @@ export function makeHuman(kind) {
   const body = { root, hips, spine, neck, arms, legs };
   root.userData.setPose = (name, phase = 0) => setPose(body, name, phase);
   root.userData.kind = kind;
+  root.userData.neck = neck; // 目線の位置を求めるため
   setPose(body, kind === 'batter' ? 'batter' : kind === 'catcher' ? 'catcher' : kind === 'umpire' ? 'umpire' : 'ready');
   return root;
 }

@@ -34,16 +34,24 @@
           <div id="blocks" class="grid"></div>
         </section>
 
+        <section>
+          <h2>選手の目線で見る</h2>
+          <p class="hint">選手の目の高さから見ます。打球を追って走ると、目線も一緒に動きます。</p>
+          <div id="player-views" class="grid"></div>
+        </section>
+
         <section id="seat-tools" hidden>
-          <h2>座席から</h2>
+          <h2 id="view-title">座席から</h2>
           <p id="seat-name" class="seat-name"></p>
-          <div class="row">
-            <button data-move="front">前の列へ</button>
-            <button data-move="back">後ろの列へ</button>
-          </div>
-          <div class="row">
-            <button data-move="left">左へ</button>
-            <button data-move="right">右へ</button>
+          <div id="seat-move">
+            <div class="row">
+              <button data-move="front">前の列へ</button>
+              <button data-move="back">後ろの列へ</button>
+            </div>
+            <div class="row">
+              <button data-move="left">左へ</button>
+              <button data-move="right">右へ</button>
+            </div>
           </div>
           <div class="row">
             <button id="btn-look-home">ホームを見る</button>
