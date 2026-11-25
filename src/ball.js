@@ -39,6 +39,7 @@ export function simulate(o, env) {
   let bounces = 0;
   let kind = null;
   let firstLand = null;
+  let firstLandIndex = -1;
   while (t < 15) {
     const s = Math.hypot(v[0], v[1], v[2]);
     // 揚力: 速度に垂直で、水平進行方向に対して上向き（バックスピン）
@@ -57,6 +58,7 @@ export function simulate(o, env) {
       np[1] = hit.y;
       if (!firstLand) {
         firstLand = np.slice();
+        firstLandIndex = points.length; // この点が次に points に入る
         kind = hit.kind;
       }
       // スタンド・場外・フェンスに当たったら終わり。グラウンドでは数回弾む
@@ -74,5 +76,5 @@ export function simulate(o, env) {
     points.push(p.slice());
     ts.push(t);
   }
-  return { points, t: ts, firstLand: firstLand || p, apex, kind: kind || 'field' };
+  return { points, t: ts, firstLand: firstLand || p, firstLandIndex, apex, kind: kind || 'field' };
 }

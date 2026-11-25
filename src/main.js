@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { buildField, outlineRadius } from './field.js';
 import { PRESETS, simulate } from './ball.js';
+import { createPlayers } from './players.js';
 
 const DATA = './data/';
 const isMobile = matchMedia('(max-width: 700px)').matches || /Mobi|Android/i.test(navigator.userAgent);
@@ -502,6 +503,7 @@ function hitBall(preset) {
     cfDir: S.scene.cfDir,
     groundAt: groundAtFactory(),
   });
+  const play = S.players.react(res);
   const n = res.points.length;
   const positions = new Float32Array(n * 3);
   res.points.forEach((p, i) => positions.set(p, i * 3));
@@ -516,7 +518,8 @@ function hitBall(preset) {
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }),
   );
   scene.add(line, ball, shadow);
-  const b = { res, line, ball, shadow, t0: performance.now() / 1000, done: false, o };
+  const b = { res, line, ball, shadow, t0: performance.now() / 1000, done: false, o, play };
+  S.players.start(play, b.t0);
   S.balls.push(b);
   while (S.balls.length > 6) removeBall(S.balls.shift());
   document.getElementById('ball-result').textContent = '打球を追跡中…';
@@ -533,11 +536,18 @@ function describe(b) {
   const l = r.firstLand;
   const dist = Math.hypot(l[0], l[2]);
   const apex = r.apex - S.scene.field.y;
-  const tl = r.t[r.points.indexOf(r.points.find((p) => p[0] === l[0] && p[2] === l[2]))] ?? r.t[r.t.length - 1];
+  const li = r.firstLandIndex >= 0 && r.firstLandIndex < r.t.length ? r.firstLandIndex : r.t.length - 1;
+  const tl = b.play.caught && b.play.fly ? r.t[r.t.length - 1] : r.t[li];
   const foul = Math.abs(b.o.spray) > 45;
-  const kinds = { stand: 'ホームラン', outside: '場外ホームラン', fence: 'フェンス直撃', field: 'グラウンドに落下' };
+  const kinds = { stand: 'ホームラン', outside: '場外ホームラン', fence: 'フェンス直撃', field: 'ヒット' };
   let what = foul ? 'ファウル' : kinds[r.kind];
   if (foul && (r.kind === 'stand' || r.kind === 'outside')) what = 'ファウル（スタンドへ）';
+  const who = b.play.fielder.name;
+  const liner = apex < 4;
+  if (b.play.caught && b.play.fly) {
+    what = foul ? `ファウルフライ（${who}がキャッチ）` : liner ? `ライナーでアウト（${who}がキャッチ）` : `フライでアウト（${who}がキャッチ）`;
+  }
+  else if (b.play.caught) what = foul ? 'ファウル' : b.play.fielder.infield ? `ゴロ（${who}が捕球）` : `ヒット（${who}が捕球）`;
   return (
     `<strong>${what}</strong><br>` +
     `打球速度 ${b.o.speed.toFixed(0)} km/h・角度 ${b.o.angle.toFixed(0)}°<br>` +
@@ -678,6 +688,7 @@ function buildUI(sc) {
   document.getElementById('btn-clear').addEventListener('click', () => {
     S.balls.forEach(removeBall);
     S.balls = [];
+    S.players.reset();
     document.getElementById('ball-result').textContent = '';
   });
   document.getElementById('btn-overview').addEventListener('click', overview);
@@ -690,6 +701,7 @@ function buildUI(sc) {
   document.getElementById('chk-follow').addEventListener('change', (e) => (S.follow = e.target.checked));
   document.getElementById('chk-labels').addEventListener('change', updateLabelVisibility);
   document.getElementById('chk-seats').addEventListener('change', (e) => (S.seats.mesh.visible = e.target.checked));
+  document.getElementById('chk-players').addEventListener('change', (e) => (S.players.group.visible = e.target.checked));
   const panel = document.getElementById('panel');
   document.getElementById('panel-toggle').addEventListener('click', () => panel.classList.toggle('open'));
   if (isMobile) panel.classList.remove('open');
@@ -703,6 +715,7 @@ function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = performance.now() / 1000;
   updateBalls(now);
+  if (S.players) S.players.update(now, !activeBall());
 
   if (S.tween) {
     const tw = S.tween;
@@ -773,6 +786,8 @@ async function main() {
   scene.add(buildGround(gr.far, farTex, false, -1.5));
   const maxTex = Math.min(renderer.capabilities.maxTextureSize, isMobile ? 2048 : 4096);
   scene.add(buildField(sc.field, sc.cfDir, maxTex));
+  S.players = createPlayers(sc.field, sc.cfDir);
+  scene.add(S.players.group);
   scene.add(buildStadium(sc, stBuf, stTex));
   scene.add(buildCity(sc, cityBuf));
   scene.add(buildTrees(sc, treeBuf));
