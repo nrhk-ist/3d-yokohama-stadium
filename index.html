@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>横浜スタジアム 3D</title>
+    <meta name="description" content="横浜スタジアムを3Dで表示し、客席からグラウンドがどう見えるかを体験できます。" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <header id="title">
+      <h1>横浜スタジアム 3D</h1>
+      <p id="mode-label">全体を見る</p>
+    </header>
+
+    <div id="loading">
+      <div class="box">
+        <p>読み込み中…</p>
+        <div class="bar"><div id="loading-bar"></div></div>
+      </div>
+    </div>
+
+    <aside id="panel" class="open">
+      <button id="panel-toggle" aria-label="メニューを開閉">≡ メニュー</button>
+      <div class="panel-body">
+        <section>
+          <h2>見る場所</h2>
+          <div class="row">
+            <button id="btn-overview" class="primary">全体を見る</button>
+          </div>
+          <p class="hint">ブロックを選ぶと、その席に座った目線になります。スタンドをタップしても座れます。</p>
+          <div id="blocks" class="grid"></div>
+        </section>
+
+        <section id="seat-tools" hidden>
+          <h2>座席から</h2>
+          <p id="seat-name" class="seat-name"></p>
+          <div class="row">
+            <button data-move="front">前の列へ</button>
+            <button data-move="back">後ろの列へ</button>
+          </div>
+          <div class="row">
+            <button data-move="left">左へ</button>
+            <button data-move="right">右へ</button>
+          </div>
+          <div class="row">
+            <button id="btn-look-home">ホームを見る</button>
+            <label class="check"><input type="checkbox" id="chk-follow" checked />打球を目で追う</label>
+          </div>
+          <p class="hint">ドラッグで見回し、ホイールやピンチで拡大（双眼鏡）。</p>
+        </section>
+
+        <section>
+          <h2>打球を飛ばす</h2>
+          <div id="presets" class="grid"></div>
+          <div class="row">
+            <button id="btn-random" class="primary">ランダム</button>
+            <button id="btn-clear">軌道を消す</button>
+          </div>
+          <p id="ball-result" class="result"></p>
+        </section>
+
+        <section>
+          <h2>表示</h2>
+          <label class="check"><input type="checkbox" id="chk-labels" checked />名前を表示</label>
+          <label class="check"><input type="checkbox" id="chk-seats" checked />座席を表示</label>
+        </section>
+
+        <footer id="credits">
+          <p>
+            出典:
+            <a href="https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024" target="_blank" rel="noopener">3D都市モデル（Project PLATEAU）横浜市（2024年度）</a>、
+            <a href="https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2023" target="_blank" rel="noopener">同（2023年度）関連データセット</a>
+            （国土交通省）を加工して作成。
+            <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>
+            の空中写真・標高タイルを加工して作成。
+          </p>
+          <p>
+            座席・ブロック名・グラウンドのラインは、公開データと空中写真をもとにした目安です。公式の座席図ではありません。
+          </p>
+        </footer>
+      </div>
+    </aside>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

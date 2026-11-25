@@ -1,3 +1,52 @@
 # 横浜スタジアム 3D
 
-横浜スタジアムを3Dで表示し、客席からの見え方を体験できるWebページ（作成中）。
+横浜スタジアムを3Dで表示し、客席からグラウンドがどう見えるかを体験できるWebページです。
+
+- **全体を見る**: スタジアムと周辺（横浜公園・関内の街並み）を自由に回転・拡大して見る
+- **座席から見る**: ブロックを選ぶか、スタンドをタップすると、その席に座った目線になる。前後の列・左右の席に移動できる。ドラッグで見回し、ホイールやピンチで拡大（双眼鏡）
+- **打球を飛ばす**: ホームラン・外野フライなどの打球の軌道を表示。座席からは打球を目で追う
+- PC・スマホ対応
+
+## データ
+
+| 内容 | 出典 | 加工 |
+|---|---|---|
+| スタジアム（形・外壁や客席の写真）、周辺の建物、樹木 | [3D都市モデル（Project PLATEAU）横浜市（2024年度）](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024)（国土交通省） | CityGML から必要な範囲を取り出し、表示用に変換 |
+| 駅・ランドマーク・公園の名前と位置 | [同（2023年度）関連データセット](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2023) | ラベルとして使用 |
+| 地面の写真・標高 | [国土地理院](https://maps.gsi.go.jp/development/ichiran.html)（シームレス空中写真、標高タイル DEM5A・DEM10B） | タイルをつないで地面に貼る |
+
+PLATEAU のデータは [PLATEAU サイトポリシー](https://www.mlit.go.jp/plateau/site-policy/)（公共データ利用規約 PDL1.0 準拠、CC BY 4.0 互換）に従って利用しています。
+
+### 目安として作っているもの
+
+公式の座席図は使っていません。次のものは公開データと空中写真をもとにした目安です。
+
+- **座席**: PLATEAU のスタンドの斜面に沿って、列の高さの差 0.42m（ゆるい斜面は奥行き 0.85m）、幅 0.5m で並べたもの。通路は省略しているため、席数（約4.1万）は実際の定員（約3.4万）より多い
+- **ブロック名**: ホームベースから見た方向と高さで分けた一般的な区分（「1塁側 内野 上段」など）
+- **グラウンド**: ホームベースと二塁の位置を空中写真から読み取り、公認野球規則の標準寸法でラインを描いたもの。外周（フェンス）は PLATEAU のスタンドから求めた
+- **打球**: 空気抵抗とバックスピンを入れた簡単な物理モデル。フェンスの高さは 4.5m と仮定
+
+## 開発
+
+```sh
+npm install
+npm run dev      # 開発サーバー
+npm run build    # dist/ に出力
+```
+
+### データの作り直し
+
+`public/data` のファイルは次のスクリプトで作っています（Python 3、numpy・Pillow・mapbox_earcut が必要）。
+
+```sh
+pip install numpy pillow mapbox_earcut
+sh scripts/fetch_all.sh          # PLATEAU から必要なファイルだけを取得（scripts/.cache に保存）
+python3 scripts/build_ground.py  # 国土地理院の空中写真・標高から地面を作る
+python3 scripts/build_city.py    # スタジアム・建物・座席・樹木・ラベルを作る
+```
+
+PLATEAU の配布 ZIP（数 GB）は全体を落とさず、HTTP Range で必要なファイルだけを取り出しています。
+
+## 公開
+
+`main` に push すると、GitHub Actions（`.github/workflows/pages.yml`）でビルドして GitHub Pages に公開します。リポジトリの Settings → Pages で Source を「GitHub Actions」にしておく必要があります。
