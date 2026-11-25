@@ -4,6 +4,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { buildField, outlineRadius } from './field.js';
 import { PRESETS, simulate } from './ball.js';
 import { createPlayers } from './players.js';
+import { createPitching, PITCHES } from './pitch.js';
 
 const DATA = './data/';
 const isMobile = matchMedia('(max-width: 700px)').matches || /Mobi|Android/i.test(navigator.userAgent);
@@ -123,6 +124,8 @@ const S = {
   follow: true,
   tween: null,
   viewing: null, // 目線で見ている選手
+  simNow: 0, // 打球・投球の時計（スロー再生のときはゆっくり進む）
+  slow: false,
 };
 
 // ------------------------------------------------------------------ 地面
@@ -565,7 +568,7 @@ function hitBall(preset) {
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }),
   );
   scene.add(line, ball, shadow);
-  const b = { res, line, ball, shadow, t0: performance.now() / 1000, done: false, o, play };
+  const b = { res, line, ball, shadow, t0: S.simNow, done: false, o, play };
   S.players.start(play, b.t0);
   S.balls.push(b);
   while (S.balls.length > 6) removeBall(S.balls.shift());
@@ -600,6 +603,14 @@ function describe(b) {
     `打球速度 ${b.o.speed.toFixed(0)} km/h・角度 ${b.o.angle.toFixed(0)}°<br>` +
     `飛距離 約${dist.toFixed(0)} m・最高 約${apex.toFixed(0)} m・滞空 ${tl.toFixed(1)} 秒`
   );
+}
+
+function describePitch(r) {
+  const ap = r.res.atPlate;
+  const head = !ap ? 'ボール（ワンバウンド）' : r.strike ? 'ストライク' : 'ボール';
+  const lines = [`<strong>${head}</strong>`, `${r.pt.label}・初速 ${r.pt.speed} km/h${ap ? `・ホーム上で ${ap.speed.toFixed(0)} km/h` : ''}`];
+  if (ap) lines.push(`手を離れてからホームまで ${ap.t.toFixed(2)} 秒`);
+  return lines.join('<br>');
 }
 
 function updateBalls(now) {
@@ -726,6 +737,25 @@ function buildUI(sc) {
     btn.addEventListener('click', () => viewPlayer(f.id));
     pv.appendChild(btn);
   }
+  const pitches = document.getElementById('pitches');
+  const throwIt = (id) => {
+    if (S.pitching.active()) return;
+    S.pitching.throwPitch(id, S.simNow);
+    document.getElementById('pitch-result').textContent = '投球中…';
+  };
+  for (const pt of PITCHES) {
+    const btn = document.createElement('button');
+    btn.textContent = pt.label;
+    btn.addEventListener('click', () => throwIt(pt.id));
+    pitches.appendChild(btn);
+  }
+  const rnd = document.createElement('button');
+  rnd.textContent = 'ランダム';
+  rnd.className = 'primary';
+  rnd.addEventListener('click', () => throwIt(PITCHES[Math.floor(Math.random() * PITCHES.length)].id));
+  pitches.appendChild(rnd);
+  document.getElementById('chk-zone').addEventListener('change', (e) => (S.pitching.zone.visible = e.target.checked));
+  document.getElementById('chk-slow').addEventListener('change', (e) => (S.slow = e.target.checked));
   const presets = document.getElementById('presets');
   for (const p of PRESETS) {
     const btn = document.createElement('button');
@@ -744,7 +774,9 @@ function buildUI(sc) {
     S.balls.forEach(removeBall);
     S.balls = [];
     S.players.reset();
+    S.pitching.clear();
     document.getElementById('ball-result').textContent = '';
+    document.getElementById('pitch-result').textContent = '';
   });
   document.getElementById('btn-overview').addEventListener('click', overview);
   document.getElementById('btn-look-home').addEventListener('click', () => {
@@ -769,9 +801,14 @@ const clock = new THREE.Clock();
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
-  const now = performance.now() / 1000;
+  S.simNow += dt * (S.slow ? 0.25 : 1);
+  const now = S.simNow;
   updateBalls(now);
   if (S.players) S.players.update(now, !activeBall());
+  if (S.pitching) {
+    const pr = S.pitching.update(now);
+    if (pr) document.getElementById('pitch-result').innerHTML = describePitch(pr);
+  }
 
   if (S.tween) {
     const tw = S.tween;
@@ -799,10 +836,12 @@ function frame() {
   } else if (S.mode !== 'overview') {
     if (S.mode === 'player') camera.position.copy(playerEye(S.viewing));
     const b = activeBall();
-    if (b && S.follow && !(S.userLook && performance.now() - S.userLook < 1500)) {
-      // 打球を目で追う
+    const pitchBall = S.pitching && S.pitching.following() ? S.pitching.ball.position : null;
+    const target = b ? b.ball.position : pitchBall;
+    if (target && S.follow && !(S.userLook && performance.now() - S.userLook < 1500)) {
+      // 打球・投球を目で追う
       const eye = camera.position;
-      const d = new THREE.Vector3().subVectors(b.ball.position, eye);
+      const d = new THREE.Vector3().subVectors(target, eye);
       const ty = Math.atan2(d.x, d.z);
       const tp = Math.atan2(d.y, Math.hypot(d.x, d.z));
       let dy = ty - S.yaw;
@@ -845,6 +884,8 @@ async function main() {
   scene.add(buildField(sc.field, sc.cfDir, maxTex));
   S.players = createPlayers(sc.field, sc.cfDir);
   scene.add(S.players.group);
+  S.pitching = createPitching({ scene, field: sc.field, cfDir: sc.cfDir, pitcher: S.players.figures.find((f) => f.id === 'P') });
+  S.pitching.zone.visible = true;
   scene.add(buildStadium(sc, stBuf, stTex));
   scene.add(buildCity(sc, cityBuf));
   scene.add(buildTrees(sc, treeBuf));
