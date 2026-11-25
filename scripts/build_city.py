@@ -402,7 +402,11 @@ def build_labels(names):
         with open(os.path.join(rel, f), encoding="utf-8") as fp:
             d = json.load(fp)
         seen = set()
-        for ft in d["features"]:
+        feats = d["features"]
+        if kind == "station":
+            # 同じ名前の駅が複数あるとき（地下鉄と JR など）は、地上に駅舎が見える JR の位置を使う
+            feats = sorted(feats, key=lambda f: f["properties"].get("運営会社") != "東日本旅客鉄道")
+        for ft in feats:
             lon, lat = ft["geometry"]["coordinates"][:2]
             x, z = to_local(lon, lat)
             nm = ft["properties"][key]
