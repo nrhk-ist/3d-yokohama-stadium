@@ -122,6 +122,7 @@ const S = {
   balls: [],
   follow: true,
   tween: null,
+  viewing: null, // 目線で見ている選手
 };
 
 // ------------------------------------------------------------------ 地面
@@ -372,6 +373,7 @@ function homeTarget() {
 
 function sitAt(i, keepView = false) {
   if (i < 0) return;
+  leavePlayer();
   const prevMode = S.mode;
   S.mode = 'seat';
   S.seatIndex = i;
@@ -388,11 +390,55 @@ function sitAt(i, keepView = false) {
   const bid = S.seats.block[i];
   const b = S.scene.blocks.find((x) => x.id === bid);
   document.getElementById('seat-name').textContent = `${b ? b.name : ''}（目安）`;
+  document.getElementById('view-title').textContent = '座席から';
+  document.getElementById('seat-move').hidden = false;
   document.getElementById('seat-tools').hidden = false;
   document.getElementById('mode-label').textContent = `座席から見る：${b ? b.name : ''}`;
   for (const btn of document.querySelectorAll('#blocks button')) btn.classList.toggle('active', Number(btn.dataset.id) === bid);
   history.replaceState(null, '', `#seat=${i}`);
   updateLabelVisibility();
+}
+
+// ------------------------------------------------------------------ 選手の目線
+
+/** 選手の目の位置（首の関節から少し上・前） */
+function playerEye(f) {
+  f.obj.updateMatrixWorld(true);
+  return f.obj.userData.neck.localToWorld(new THREE.Vector3(0, 0.12, 0.1));
+}
+
+function viewPlayer(id) {
+  const f = S.players.figures.find((x) => x.id === id);
+  if (!f) return;
+  const prevMode = S.mode;
+  leavePlayer();
+  S.mode = 'player';
+  S.seatIndex = -1;
+  S.viewing = f;
+  f.obj.visible = false; // 自分の体が視界をふさがないように
+  controls.enabled = false;
+  const eye = playerEye(f);
+  const target = f.look.clone();
+  target.y = S.scene.field.y + 1.2;
+  lookAtPoint(eye, target);
+  S.fov = 60;
+  startTween(camera.position.clone(), camera.quaternion.clone(), camera.fov, eye, viewQuaternion(), S.fov, prevMode === 'overview' ? 1.8 : 1.0);
+  if (prevMode === 'overview') S.tween.ctrl = new THREE.Vector3(eye.x, Math.max(camera.position.y, eye.y + 60), eye.z);
+  document.getElementById('view-title').textContent = '選手の目線';
+  document.getElementById('seat-name').textContent = f.name;
+  document.getElementById('seat-move').hidden = true;
+  document.getElementById('seat-tools').hidden = false;
+  document.getElementById('mode-label').textContent = `選手の目線：${f.name}`;
+  for (const btn of document.querySelectorAll('#blocks button')) btn.classList.remove('active');
+  for (const btn of document.querySelectorAll('#player-views button')) btn.classList.toggle('active', btn.dataset.id === id);
+  history.replaceState(null, '', `#player=${id}`);
+  updateLabelVisibility();
+}
+
+function leavePlayer() {
+  if (S.viewing) S.viewing.obj.visible = true;
+  S.viewing = null;
+  for (const btn of document.querySelectorAll('#player-views button')) btn.classList.remove('active');
 }
 
 function viewQuaternion() {
@@ -407,6 +453,7 @@ function startTween(p0, q0, f0, p1, q1, f1, dur) {
 }
 
 function overview() {
+  leavePlayer();
   S.mode = 'overview';
   S.seatIndex = -1;
   document.getElementById('seat-tools').hidden = true;
@@ -603,7 +650,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (!prev) return;
   const cur = { x: e.clientX, y: e.clientY };
   pointers.set(e.pointerId, cur);
-  if (S.mode !== 'seat' || S.tween) return;
+  if (S.mode === 'overview' || S.tween) return;
   if (pointers.size === 2 && pinchStart) {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -630,7 +677,7 @@ renderer.domElement.addEventListener('pointercancel', endPointer);
 renderer.domElement.addEventListener(
   'wheel',
   (e) => {
-    if (S.mode !== 'seat') return;
+    if (S.mode === 'overview') return;
     e.preventDefault();
     S.fov = THREE.MathUtils.clamp(S.fov * Math.exp(e.deltaY * 0.001), 8, 80);
   },
@@ -671,6 +718,14 @@ function buildUI(sc) {
     });
     blocks.appendChild(btn);
   }
+  const pv = document.getElementById('player-views');
+  for (const f of S.players.figures) {
+    const btn = document.createElement('button');
+    btn.textContent = f.name;
+    btn.dataset.id = f.id;
+    btn.addEventListener('click', () => viewPlayer(f.id));
+    pv.appendChild(btn);
+  }
   const presets = document.getElementById('presets');
   for (const p of PRESETS) {
     const btn = document.createElement('button');
@@ -693,8 +748,9 @@ function buildUI(sc) {
   });
   document.getElementById('btn-overview').addEventListener('click', overview);
   document.getElementById('btn-look-home').addEventListener('click', () => {
-    if (S.seatIndex < 0) return;
-    lookAtPoint(seatEye(S.seatIndex), homeTarget());
+    if (S.mode === 'player') lookAtPoint(playerEye(S.viewing), homeTarget());
+    else if (S.seatIndex >= 0) lookAtPoint(seatEye(S.seatIndex), homeTarget());
+    else return;
     S.fov = 60;
   });
   for (const btn of document.querySelectorAll('[data-move]')) btn.addEventListener('click', () => moveSeat(btn.dataset.move));
@@ -740,7 +796,8 @@ function frame() {
       S.tween = null;
       if (tw.onEnd) tw.onEnd();
     }
-  } else if (S.mode === 'seat') {
+  } else if (S.mode !== 'overview') {
+    if (S.mode === 'player') camera.position.copy(playerEye(S.viewing));
     const b = activeBall();
     if (b && S.follow && !(S.userLook && performance.now() - S.userLook < 1500)) {
       // 打球を目で追う
@@ -804,6 +861,8 @@ async function main() {
 
   const m = location.hash.match(/seat=(\d+)/);
   if (m && Number(m[1]) < S.seats.n) sitAt(Number(m[1]));
+  const mp = location.hash.match(/player=(\w+)/);
+  if (mp) viewPlayer(mp[1]);
 
   document.getElementById('loading').classList.add('done');
   frame();

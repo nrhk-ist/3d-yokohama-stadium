@@ -155,5 +155,13 @@ export function createPlayers(field, cfDir) {
     if (play.done && now - play.done > 4) reset();
   }
 
-  return { group, react, start, update, reset };
+  // 目線で見られる人（守備の 9 人・打者・球審）。look は最初に見る方向
+  const mound = toWorld(18.44, 0);
+  const figures = [
+    ...fielders.map((f) => ({ id: f.id, name: f.name, obj: f.obj, look: f.id === 'P' ? home : f.id === 'C' ? mound : home })),
+    { id: 'BAT', name: '打者', obj: batter, look: mound },
+    { id: 'UMP', name: '球審', obj: ump, look: mound },
+  ];
+
+  return { group, react, start, update, reset, figures };
 }
