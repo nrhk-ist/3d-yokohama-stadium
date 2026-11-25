@@ -140,6 +140,7 @@ export function makeHuman(kind) {
   root.userData.setPose = (name, phase = 0) => setPose(body, name, phase);
   root.userData.kind = kind;
   root.userData.neck = neck; // 目線の位置を求めるため
+  root.userData.rightHand = arms[0].hand; // 投球で球が離れる位置
   setPose(body, kind === 'batter' ? 'batter' : kind === 'catcher' ? 'catcher' : kind === 'umpire' ? 'umpire' : 'ready');
   return root;
 }
@@ -165,6 +166,7 @@ function setPose(b, name, phase) {
   const [ra, la] = b.arms; // 右腕・左腕
   const [rl, ll] = b.legs;
   b.hips.rotation.set(0, 0, 0);
+  b.hips.position.z = 0;
   b.spine.rotation.set(0, 0, 0);
   b.neck.rotation.set(0, 0, 0);
   if (ra.bat) ra.bat.rotation.set(0, 0, 0);
@@ -245,6 +247,19 @@ function setPose(b, name, phase) {
       h = hipHeight(0.08, 0.14);
       break;
     }
+    case 'pitch': {
+      // 投球動作（右投げ）。phase は 0（セット）〜 1（投げ終わり）。RELEASE で球が手を離れる
+      const k = pitchFrame(phase);
+      legPose(rl, k.rlh, k.rlk, 0.05);
+      legPose(ll, k.llh, k.llk, 0.08);
+      b.spine.rotation.x = k.sp;
+      b.neck.rotation.x = -k.sp * 0.7;
+      armPose(ra, k.raf, k.rao, k.rae);
+      armPose(la, k.laf, k.lao, k.lae);
+      b.hips.position.z = k.sh;
+      h = Math.max(hipHeight(k.rlh, k.rlk), hipHeight(k.llh, k.llk));
+      break;
+    }
     default: {
       both((l) => legPose(l, 0, 0, 0.04));
       armPose(ra, 0.05, 0.12, 0.15);
@@ -253,4 +268,28 @@ function setPose(b, name, phase) {
     }
   }
   b.hips.position.y = h;
+}
+
+// 投球動作のキーフレーム（右投げ）。rl/ll = 右脚/左脚、ra/la = 右腕/左腕、sp = 前傾、sh = 腰の前への移動 [m]
+export const RELEASE = 0.72;
+const PITCH_KEYS = [
+  { t: 0.0, rlh: 0.05, rlk: 0.08, llh: 0.05, llk: 0.08, sp: 0.06, raf: 0.55, rao: -0.3, rae: 1.75, laf: 0.6, lao: -0.3, lae: 1.65, sh: 0 },
+  { t: 0.3, rlh: 0.1, rlk: 0.15, llh: 1.5, llk: 1.7, sp: -0.05, raf: 0.7, rao: -0.3, rae: 1.9, laf: 0.75, lao: -0.3, lae: 1.8, sh: 0 },
+  { t: 0.62, rlh: -0.45, rlk: 0.3, llh: 0.7, llk: 0.5, sp: 0.2, raf: -1.2, rao: 0.6, rae: 0.9, laf: 1.3, lao: 0.2, lae: 0.6, sh: 0.55 },
+  { t: RELEASE, rlh: -0.6, rlk: 0.5, llh: 0.8, llk: 0.45, sp: 0.55, raf: 2.6, rao: 0.1, rae: 0.2, laf: 0.6, lao: 0.3, lae: 1.2, sh: 0.9 },
+  { t: 0.85, rlh: -0.2, rlk: 1.4, llh: 0.9, llk: 0.6, sp: 0.85, raf: 0.6, rao: -0.6, rae: 0.5, laf: 0.2, lao: 0.3, lae: 1.4, sh: 1.1 },
+  { t: 1.0, rlh: 0.3, rlk: 0.7, llh: 0.5, llk: 0.6, sp: 0.45, raf: 0.3, rao: -0.2, rae: 0.6, laf: 0.4, lao: 0.2, lae: 1.2, sh: 1.2 },
+];
+
+function pitchFrame(p) {
+  p = Math.min(1, Math.max(0, p));
+  let i = 0;
+  while (i < PITCH_KEYS.length - 2 && PITCH_KEYS[i + 1].t < p) i++;
+  const a = PITCH_KEYS[i];
+  const b = PITCH_KEYS[i + 1];
+  let f = (p - a.t) / (b.t - a.t);
+  f = f * f * (3 - 2 * f); // なめらかに
+  const out = {};
+  for (const k in a) out[k] = a[k] + (b[k] - a[k]) * f;
+  return out;
 }
