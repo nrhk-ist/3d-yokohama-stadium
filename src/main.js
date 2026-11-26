@@ -5,6 +5,7 @@ import { buildField, outlineRadius } from './field.js';
 import { PRESETS, simulate } from './ball.js';
 import { createPlayers } from './players.js';
 import { createPitching, PITCHES } from './pitch.js';
+import { CONTACT } from './human.js';
 
 const DATA = './data/';
 const isMobile = matchMedia('(max-width: 700px)').matches || /Mobi|Android/i.test(navigator.userAgent);
@@ -126,6 +127,7 @@ const S = {
   viewing: null, // 目線で見ている選手
   simNow: 0, // 打球・投球の時計（スロー再生のときはゆっくり進む）
   slow: false,
+  atBat: null, // 1 プレー（投げて打つ）の進み具合
 };
 
 // ------------------------------------------------------------------ 地面
@@ -543,13 +545,13 @@ function groundAtFactory() {
   };
 }
 
-function hitBall(preset) {
+function hitBall(preset, startAt = null) {
   const o = { ...preset };
   if (o.spray == null) o.spray = (Math.random() * 2 - 1) * 38;
   const fy = S.scene.field.y;
   const [cx, cz] = S.scene.cfDir;
   const res = simulate(o, {
-    start: { x: cx * 0.6 - cz * 0.6, y: fy + 0.9, z: cz * 0.6 + cx * 0.6 },
+    start: startAt ? { x: startAt.x, y: startAt.y, z: startAt.z } : { x: cx * 0.6 - cz * 0.6, y: fy + 0.9, z: cz * 0.6 + cx * 0.6 },
     cfDir: S.scene.cfDir,
     groundAt: groundAtFactory(),
   });
@@ -598,6 +600,15 @@ function describe(b) {
     what = foul ? `ファウルフライ（${who}がキャッチ）` : liner ? `ライナーでアウト（${who}がキャッチ）` : `フライでアウト（${who}がキャッチ）`;
   }
   else if (b.play.caught) what = foul ? 'ファウル' : b.play.fielder.infield ? `ゴロ（${who}が捕球）` : `ヒット（${who}が捕球）`;
+  // ゴロは最初に弾む所が近いので、捕った（止まった）所までの距離を出す
+  if (b.o.angle < 6 && r.kind === 'field') {
+    const e = r.points[r.points.length - 1];
+    return (
+      `<strong>${what}</strong><br>` +
+      `打球速度 ${b.o.speed.toFixed(0)} km/h・角度 ${b.o.angle.toFixed(0)}°<br>` +
+      `ゴロ・約${Math.hypot(e[0], e[2]).toFixed(0)} m 先まで`
+    );
+  }
   return (
     `<strong>${what}</strong><br>` +
     `打球速度 ${b.o.speed.toFixed(0)} km/h・角度 ${b.o.angle.toFixed(0)}°<br>` +
@@ -605,9 +616,69 @@ function describe(b) {
   );
 }
 
-function describePitch(r) {
+// ------------------------------------------------------------------ 1 プレー（投げて打つ）
+
+const SWING_DUR = 0.3; // スイングの長さ [s]
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.5; // おおよそ標準正規分布
+
+/** 投球して、打者が振るか・当たるかを決める（右打者）。当たれば打球につなげる */
+function playAtBat() {
+  if (S.pitching.active() || S.atBat) return;
+  const pt = PITCHES[Math.floor(Math.random() * PITCHES.length)];
+  const cur = S.pitching.throwPitch(pt.id, S.simNow);
+  const ap = cur.res.atPlate;
+  let swing = false;
+  let contact = false;
+  if (ap) {
+    // ストライクはよく振り、ボールはときどき振ってしまう
+    swing = Math.random() < (cur.strike ? 0.75 : 0.28);
+    contact = swing && Math.random() < (cur.strike ? 0.78 : 0.45);
+  }
+  if (contact) cur.stopT = ap.t;
+  const plateTime = cur.release + (ap ? ap.t : 0.5);
+  S.atBat = { cur, swing, contact, plateTime, swingStart: plateTime - CONTACT * SWING_DUR, hit: false };
+  document.getElementById('pitch-result').textContent = '投球中…';
+  document.getElementById('ball-result').textContent = '';
+}
+
+/** 打球の速さ・角度・方向（右打者なので三塁側に引っ張りやすい） */
+function randomBattedBall() {
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  return {
+    speed: 110 + 65 * Math.pow(Math.random(), 0.7),
+    angle: clamp(12 + 20 * gauss(), -25, 65),
+    spray: clamp(-6 + 24 * gauss(), -60, 60),
+  };
+}
+
+function updateAtBat(now) {
+  const a = S.atBat;
+  if (!a) return;
+  const batter = S.players.figures.find((f) => f.id === 'BAT').obj;
+  if (a.swing) {
+    const p = (now - a.swingStart) / SWING_DUR;
+    if (p >= 0 && p <= 1.4) batter.userData.setPose('swing', Math.min(1, p));
+  }
+  if (a.contact && !a.hit && now >= a.plateTime) {
+    a.hit = true;
+    hitBall(randomBattedBall(), a.cur.plateWorld);
+  }
+  // 打球が終わるか、投球が終わってしばらくしたら構えに戻す
+  const settled = a.contact ? a.hit && !activeBall() : now > a.plateTime + 1.2;
+  if (settled && now > a.plateTime + 1.5) {
+    batter.userData.setPose('batter');
+    S.atBat = null;
+  }
+}
+
+function describePitch(r, ab = null) {
   const ap = r.res.atPlate;
-  const head = !ap ? 'ボール（ワンバウンド）' : r.strike ? 'ストライク' : 'ボール';
+  let head = !ap ? 'ボール（ワンバウンド）' : r.strike ? 'ストライク' : 'ボール';
+  if (ab) {
+    if (ab.contact) head = '打った！';
+    else if (ab.swing) head = 'ストライク（空振り）';
+    else if (r.strike) head = 'ストライク（見逃し）';
+  }
   const lines = [`<strong>${head}</strong>`, `${r.pt.label}・初速 ${r.pt.speed} km/h${ap ? `・ホーム上で ${ap.speed.toFixed(0)} km/h` : ''}`];
   if (ap) lines.push(`手を離れてからホームまで ${ap.t.toFixed(2)} 秒`);
   return lines.join('<br>');
@@ -739,7 +810,7 @@ function buildUI(sc) {
   }
   const pitches = document.getElementById('pitches');
   const throwIt = (id) => {
-    if (S.pitching.active()) return;
+    if (S.pitching.active() || S.atBat) return;
     S.pitching.throwPitch(id, S.simNow);
     document.getElementById('pitch-result').textContent = '投球中…';
   };
@@ -751,9 +822,9 @@ function buildUI(sc) {
   }
   const rnd = document.createElement('button');
   rnd.textContent = 'ランダム';
-  rnd.className = 'primary';
   rnd.addEventListener('click', () => throwIt(PITCHES[Math.floor(Math.random() * PITCHES.length)].id));
   pitches.appendChild(rnd);
+  document.getElementById('btn-atbat').addEventListener('click', playAtBat);
   document.getElementById('chk-zone').addEventListener('change', (e) => (S.pitching.zone.visible = e.target.checked));
   document.getElementById('chk-slow').addEventListener('change', (e) => (S.slow = e.target.checked));
   const presets = document.getElementById('presets');
@@ -807,8 +878,9 @@ function frame() {
   if (S.players) S.players.update(now, !activeBall());
   if (S.pitching) {
     const pr = S.pitching.update(now);
-    if (pr) document.getElementById('pitch-result').innerHTML = describePitch(pr);
+    if (pr) document.getElementById('pitch-result').innerHTML = describePitch(pr, S.atBat && S.atBat.cur === pr ? S.atBat : null);
   }
+  updateAtBat(now);
 
   if (S.tween) {
     const tw = S.tween;

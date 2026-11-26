@@ -142,7 +142,17 @@ export function createPitching({ scene, field, cfDir, pitcher }) {
     trail.geometry.setDrawRange(0, 0);
     trail.visible = true;
     ball.visible = false;
-    cur = { pt, res, world, t0: now, release: now + WINDUP * RELEASE, strike, done: false };
+    cur = {
+      pt,
+      res,
+      world,
+      t0: now,
+      release: now + WINDUP * RELEASE,
+      strike,
+      done: false,
+      stopT: null, // 打たれたときはホームベースの上で球を止める（res.atPlate.t）
+      plateWorld: ap ? W(PLATE_U, ap.v, ap.h) : null,
+    };
     return cur;
   }
 
@@ -157,11 +167,12 @@ export function createPitching({ scene, field, cfDir, pitcher }) {
     const pts = cur.res.pts;
     let i = 0;
     while (i < pts.length - 1 && pts[i + 1].t < t) i++;
-    ball.visible = true;
+    const hit = cur.stopT != null && t >= cur.stopT;
+    ball.visible = !hit;
     ball.position.copy(cur.world[i]);
     cur.u = pts[i].u;
-    trail.geometry.setDrawRange(0, i + 1);
-    if (i >= pts.length - 1 && !cur.done) {
+    if (!hit || !cur.done) trail.geometry.setDrawRange(0, i + 1);
+    if ((hit || i >= pts.length - 1) && !cur.done) {
       cur.done = true;
       return cur;
     }

@@ -141,6 +141,7 @@ export function makeHuman(kind) {
   root.userData.kind = kind;
   root.userData.neck = neck; // 目線の位置を求めるため
   root.userData.rightHand = arms[0].hand; // 投球で球が離れる位置
+  root.userData.bat = arms[0].bat || null;
   setPose(body, kind === 'batter' ? 'batter' : kind === 'catcher' ? 'catcher' : kind === 'umpire' ? 'umpire' : 'ready');
   return root;
 }
@@ -224,6 +225,21 @@ function setPose(b, name, phase) {
       h = hipHeight(0.25, 0.42);
       break;
     }
+    case 'swing': {
+      // 右打者のスイング。phase は 0（構え）〜 1（振り終わり）。CONTACT でボールに当たる
+      const k = keyframe(SWING_KEYS, phase);
+      both((l) => legPose(l, 0.25, 0.42, 0.22));
+      legPose(ll, k.llh, 0.42, 0.22);
+      b.hips.rotation.y = k.hy;
+      b.spine.rotation.x = 0.22;
+      b.spine.rotation.y = k.sy;
+      b.neck.rotation.y = 1.15 - k.hy - k.sy; // 体が回っても目は投手（ボール）の方へ
+      armPose(ra, k.raf, k.rao, k.rae);
+      armPose(la, k.laf, k.lao, k.lae);
+      ra.bat.rotation.set(k.bx, k.by, k.bz);
+      h = hipHeight(0.25, 0.42);
+      break;
+    }
     case 'run': {
       // 走る: phase はラジアンで進む
       const sn = Math.sin(phase);
@@ -281,12 +297,24 @@ const PITCH_KEYS = [
   { t: 1.0, rlh: 0.3, rlk: 0.7, llh: 0.5, llk: 0.6, sp: 0.45, raf: 0.3, rao: -0.2, rae: 0.6, laf: 0.4, lao: 0.2, lae: 1.2, sh: 1.2 },
 ];
 
-function pitchFrame(p) {
+const pitchFrame = (p) => keyframe(PITCH_KEYS, p);
+
+// スイングのキーフレーム（右打者）。hy/sy = 腰/胴の回転、llh = 左脚の踏み出し、b* = バットの向き
+export const CONTACT = 0.55;
+const SWING_KEYS = [
+  { t: 0.0, hy: 0, sy: 0, llh: 0.25, raf: 0.45, rao: 0.25, rae: 2.35, laf: 0.95, lao: -0.85, lae: 1.75, bx: -0.75, by: 0, bz: 0.45 },
+  { t: 0.3, hy: -0.15, sy: -0.35, llh: 0.45, raf: 0.35, rao: 0.35, rae: 2.4, laf: 0.85, lao: -0.95, lae: 1.85, bx: -0.95, by: 0, bz: 0.5 },
+  { t: CONTACT, hy: 0.6, sy: 0.8, llh: 0.3, raf: 1.25, rao: 0.15, rae: 0.6, laf: 1.3, lao: -0.55, lae: 0.25, bx: 0, by: 0, bz: -1.3 },
+  { t: 0.75, hy: 0.9, sy: 1.4, llh: 0.25, raf: 1.6, rao: -0.3, rae: 1.0, laf: 1.6, lao: -0.6, lae: 0.6, bx: -0.6, by: 0, bz: -0.2 },
+  { t: 1.0, hy: 1.0, sy: 1.75, llh: 0.25, raf: 1.9, rao: -0.7, rae: 1.7, laf: 1.9, lao: -0.9, lae: 1.3, bx: -0.6, by: 0, bz: 1.2 },
+];
+
+function keyframe(keys, p) {
   p = Math.min(1, Math.max(0, p));
   let i = 0;
-  while (i < PITCH_KEYS.length - 2 && PITCH_KEYS[i + 1].t < p) i++;
-  const a = PITCH_KEYS[i];
-  const b = PITCH_KEYS[i + 1];
+  while (i < keys.length - 2 && keys[i + 1].t < p) i++;
+  const a = keys[i];
+  const b = keys[i + 1];
   let f = (p - a.t) / (b.t - a.t);
   f = f * f * (3 - 2 * f); // なめらかに
   const out = {};
